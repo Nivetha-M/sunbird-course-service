@@ -111,10 +111,17 @@ class CourseEnrolmentActor @Inject()(@Named("course-batch-notification-actor") c
     def list(request: Request): Unit = {
         val userId = request.get(JsonKey.USER_ID).asInstanceOf[String]
         val courseIdList = request.get(JsonKey.COURSE_IDS).asInstanceOf[java.util.List[String]]
-        logger.info(request.getRequestContext,"CourseEnrolmentActor :: list :: UserId = " + userId)
+        logger.info(request.getRequestContext,"CourseEnrolmentActor :: list :: UserId = " + userId + " courseId = " + courseIdList)
+        logger.info(request.getRequestContext,"request = " + request)
         try{
-            val response = if (isCacheEnabled && request.getContext.get("cache").asInstanceOf[Boolean])
-                getCachedEnrolmentList(userId, () => getEnrolmentList(request, userId, courseIdList)) else getEnrolmentList(request, userId, courseIdList)
+            val response = if (isCacheEnabled && request.getContext.get("cache").asInstanceOf[Boolean]) {
+                logger.info(request.getRequestContext,"fetch cached result")
+                getCachedEnrolmentList(request, userId, () => getEnrolmentList(request, userId, courseIdList))
+            } else {
+                logger.info(request.getRequestContext,"fetch enrolment result")
+                getEnrolmentList(request, userId, courseIdList)
+            }
+            logger.info(request.getRequestContext, "Final Response = " + response)
             sender().tell(response, self)
         }catch {
             case e: Exception =>
@@ -297,13 +304,18 @@ class CourseEnrolmentActor @Inject()(@Named("course-batch-notification-actor") c
 
     def getCacheKey(userId: String) = s"$userId:user-enrolments"
 
-    def getCachedEnrolmentList(userId: String, handleEmptyCache: () => Response): Response = {
+    def getCachedEnrolmentList(request: Request, userId: String, handleEmptyCache: () => Response): Response = {
         val key = getCacheKey(userId)
+        logger.info(request.getRequestContext, "cache key = " + key)
         val responseString = cacheUtil.get(key)
+        logger.info(request.getRequestContext, "cache value = " + responseString)
         if (StringUtils.isNotBlank(responseString)) {
+            logger.info(request.getRequestContext, " using cache value ")
             JsonUtil.deserialize(responseString, classOf[Response])
         } else {
+            logger.info(request.getRequestContext, "using enrollment result ")
             val response = handleEmptyCache()
+            logger.info(request.getRequestContext, "enrolment response = " + response)
             val responseString = JsonUtil.serialize(response)
             cacheUtil.set(key, responseString, ttl)
             response
@@ -313,6 +325,7 @@ class CourseEnrolmentActor @Inject()(@Named("course-batch-notification-actor") c
     def getEnrolmentList(request: Request, userId: String, courseIdList: java.util.List[String]): Response = {
         logger.info(request.getRequestContext,"CourseEnrolmentActor :: getCachedEnrolmentList :: fetching data from cassandra with userId " + userId)
         val activeEnrolments: java.util.List[java.util.Map[String, AnyRef]] = getActiveEnrollments( userId, courseIdList, request.getRequestContext)
+        logger.info(request.getRequestContext, "activeEnrolments result = " + activeEnrolments)
         val enrolments: java.util.List[java.util.Map[String, AnyRef]] = {
             if (CollectionUtils.isNotEmpty(activeEnrolments)) {
               val courseIds: java.util.List[String] = activeEnrolments.map(e => e.getOrDefault(JsonKey.COURSE_ID, "").asInstanceOf[String]).distinct.filter(id => StringUtils.isNotBlank(id)).toList.asJava

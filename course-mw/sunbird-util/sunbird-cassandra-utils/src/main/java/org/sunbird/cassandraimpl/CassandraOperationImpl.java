@@ -434,6 +434,7 @@ public abstract class CassandraOperationImpl implements CassandraOperation {
     try {
       Session session = connectionManager.getSession(keyspaceName);
       Builder selectBuilder;
+      logger.info(requestContext , "Select query fields = " + fields);
       if (CollectionUtils.isNotEmpty(fields)) {
         selectBuilder = QueryBuilder.select(fields.toArray(new String[fields.size()]));
       } else {
@@ -453,6 +454,7 @@ public abstract class CassandraOperationImpl implements CassandraOperation {
                   CassandraUtil.createQuery(x.getKey(), x.getValue(), selectWhere);
                 });
       }
+      logger.info(requestContext,  "Select query = " +selectWhere.getQueryString());
       logger.debug(requestContext, selectWhere.getQueryString());
       ResultSet results = session.execute(selectWhere);
       response = CassandraUtil.createResponse(results);
